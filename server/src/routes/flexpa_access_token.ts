@@ -12,7 +12,6 @@ interface AccessTokenRequestBody {
 }
 
 // POST /flexpa-access-token
-// Exchanges the [publicToken](file:///Users/arindamkulshi/quickstart/client/src/main.ts#22%2C23-22%2C23) for an [access_token](file:///Users/arindamkulshi/quickstart/server/src/routes/flexpa_access_token.ts#6%2C3-6%2C3)
 router.post("/", async (req: Request, res: Response) => {
   const { publicToken } = req.body as AccessTokenRequestBody;
 
@@ -29,7 +28,6 @@ router.post("/", async (req: Request, res: Response) => {
     process.env.FLEXPA_PUBLIC_API_BASE_URL,
   ).href;
 
-  // Call Flexpa API's exchange endpoint to exchange the [publicToken](file:///Users/arindamkulshi/quickstart/client/src/main.ts#22%2C23-22%2C23) for an [access_token](file:///Users/arindamkulshi/quickstart/server/src/routes/flexpa_access_token.ts#6%2C3-6%2C3)
   try {
     const response = await fetch(exchangeEndpoint, {
       method: "POST",
