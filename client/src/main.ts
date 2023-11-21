@@ -1,13 +1,65 @@
+/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import "./style.css";
 import { FlexpaConfig} from "./flexpa_types";
 import displayFlexpaLinkButton from "./flexpa_link_button";
-
+import {displayExplanationOfBenefit, fetchEOBData } from './explain_benefits';
 
 declare const FlexpaLink: {
   create: (config: FlexpaConfig) => Record<string, unknown>;
   open: () => Record<string, unknown>;
 };
+
+
+// Fetches the access token using the publicToken
+async function fetchAccessToken(publicToken: string) {
+  try {
+    const resp = await fetch(`${import.meta.env.VITE_SERVER_URL}/flexpa-access-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ publicToken }),
+    });
+    if (!resp.ok) {
+      console.error(`Failed to fetch access token: ${resp.status}`);
+      return null;
+    }
+    const { accessToken } = await resp.json();
+    return accessToken;
+  } catch (err) {
+    console.error('Access token error:', err);
+    return null;
+  }
+}
+
+
+
+// Hides the Flexpa Link button and the Test Mode Login button
+function hideButtons() {
+  const flexpaLinkBtn = document.getElementById("flexpa-link-btn");
+  const testModeLoginBtn = document.getElementById("test-mode-login-btn");
+  if (flexpaLinkBtn) {
+    flexpaLinkBtn.style.display = 'none';
+  }
+  if (testModeLoginBtn) {
+    testModeLoginBtn.style.display = 'none';
+  }
+}
+
+// The onSuccess function for FlexpaLink.create
+async function onSuccess(publicToken: string) {
+  const accessToken = await fetchAccessToken(publicToken);
+  if (!accessToken) {
+    return;
+  }
+  const fhirEOBBody = await fetchEOBData(accessToken);
+  if (!fhirEOBBody) {
+    return;
+  }
+  displayExplanationOfBenefit(fhirEOBBody);
+  hideButtons();
+}
 
 function initializePage() {
   if (!import.meta.env.VITE_FLEXPA_PUBLISHABLE_KEY) {
@@ -18,61 +70,7 @@ function initializePage() {
 
   FlexpaLink.create({
     publishableKey: import.meta.env.VITE_FLEXPA_PUBLISHABLE_KEY,
-    onSuccess: async (publicToken: string) => {
-      // Fetch the access token using the publicToken
-      let resp;
-      try {
-        resp = await fetch(`${import.meta.env.VITE_SERVER_URL}/flexpa-access-token`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ publicToken }),
-        });
-        if (!resp.ok) {
-          console.error(`Failed to fetch access token: ${resp.status}`);
-          return;
-        }
-      } catch (err) {
-        console.error('Access token error:', err);
-        return;
-      }
-
-      const { accessToken } = await resp.json();
-
-      let fhirEOBResp;
-      try {
-        fhirEOBResp = await fetch(
-          `${import.meta.env.VITE_SERVER_URL}/fhir/ExplanationOfBenefit?patient=$PATIENT_ID`,
-          {
-            method: "GET",
-            headers: {
-              authorization: `Bearer ${accessToken}`,
-            },
-          },
-        );
-        if (!fhirEOBResp.ok) {
-          console.error(`Fetch failed with status: ${fhirEOBResp.status}`);
-          return;
-        }
-        const fhirEOBBody = await fhirEOBResp.json();
-        displayExplanationOfBenefit(fhirEOBBody);
-      } catch (err) {
-        console.error("ExplanationOfBenefit error: ", err);
-      }
-
-      const flexpaLinkBtn = document.getElementById("flexpa-link-btn");
-      const testModeLoginBtn = document.getElementById("test-mode-login-btn");
-      if (flexpaLinkBtn) {
-        flexpaLinkBtn.style.display = 'none';
-      }
-      if (testModeLoginBtn) {
-        testModeLoginBtn.style.display = 'none';
-      }
-
-
-
-    },
+    onSuccess,
   });
 
   const flexpaLinkDiv = document.getElementById("flexpa-link");
@@ -91,60 +89,5 @@ function initializePage() {
     FlexpaLink.open();
   });
 }
-
-
-
-
-/*
-
-This will display the patient,provider and insurance information for that EOB. It will display the EOB for as many entries as exist
-*/
-function EOBComponent(eobData: any) {
-  let html = '';
-  eobData.entry.forEach((entry: any) => {
-    const provider = entry.resource.provider;
-    const patient = entry.resource.patient;
-    const insurance = entry.resource.insurance;
-
-    let insuranceHTML = '';
-    insurance.forEach((ins: any) => {
-      insuranceHTML += `
-        <div>
-          <p>Coverage Reference: ${ins.coverage.reference}</p>
-        </div>
-      `;
-    });
-
-    html += `
-      <div>
-        <h3>Patient Information</h3>
-        <p>Reference: ${patient.reference}</p>
-
-        <h3>Provider Information</h3>
-        <p>Reference: ${provider.reference}</p>
-        <p>Name: ${provider.display}</p>
-
-        <h3>Insurance Information</h3>
-        ${insuranceHTML}
-        
-      </div>
-    `;
-  });
-
-  return html;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function displayExplanationOfBenefit(eobData: any) {
-  console.log('ExplanationOfBenefit Data:', eobData);
-
-  const eobDiv = document.getElementById('eob-data');
-  if (eobDiv) {
-    eobDiv.innerHTML = EOBComponent(eobData);
-  } else {
-    console.error('Could not find the ExplanationOfBenefit data div');
-  }
-}
-
 
 initializePage();

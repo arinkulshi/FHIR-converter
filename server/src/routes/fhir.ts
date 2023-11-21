@@ -3,69 +3,63 @@ import express, { Request, Response, Router } from "express";
 
 const router: Router = express.Router();
 
-/**
- *  This function retries a fetch request if the response is a 429 Too Many Requests.
- *  This is necessary because the Flexpa API may return a 429 if the data has not yet been loaded into the cache.
- */
-async function fetchWithRetry(
-  url: string,
-  authorization: string,
-  maxRetries = 10,
+
+async function handleFetchRequest(
+  endpoint: string,
+  authHeader: string,
+  maxAttempts = 10,
 ) {
-  let retries = 0;
-  let delay = 1;
-  while (retries < maxRetries) {
+  let attempts = 0;
+  let waitTime = 1;
+  while (attempts < maxAttempts) {
     try {
-      console.log(`Fetching ${url}, retries: ${retries}`);
-      const response = await fetch(url, {
+      console.log(`Attempt ${attempts + 1}: Fetching data from ${endpoint}`);
+      const response = await fetch(endpoint, {
         method: "GET",
         headers: {
           "content-type": "application/json",
-          Authorization: authorization,
+          Authorization: authHeader,
           "x-flexpa-raw": "0",
         },
       });
       if (response.status !== 429) {
-        console.log(`Received ${response.status} from ${url}`);
+        console.log(`Response ${response.status} received from ${endpoint}`);
         return response;
       }
-      const retryAfter = response.headers.get("Retry-After") || delay;
+      const retryAfter = response.headers.get("Retry-After") || waitTime;
       await new Promise((resolve) =>
         setTimeout(resolve, Number(retryAfter) * 1000),
       );
-      retries++;
-      delay *= 2; // Double the delay for exponential backoff
+      attempts++;
+      waitTime *= 2;
     } catch (err) {
-      console.log(`Error fetching ${url}: ${err}`);
+      console.log(`Error fetching data from ${endpoint}: ${err}`);
       throw err;
     }
   }
 
-  throw new Error("Max retries reached.");
+  throw new Error("Maximum attempts reached.");
 }
 
-/**
- * Handles FHIR requests by proxying all requests to the patient's payer FHIR server via https://api.flexpa.com/fhir.
- * This router also appends the received URL path to the outbound request URL.
- */
+// Router to handle FHIR requests
 router.get("*", async (req: Request, res: Response) => {
-  const { authorization } = req.headers;
-  if (!authorization) {
+  const authHeader = req.headers.authorization;
+  if (!authHeader) {
     return res.status(401).send("All requests must be authenticated.");
   }
 
-  const { href } = new URL(
+  const endpoint = new URL(
     `fhir${req.path}`,
     process.env.FLEXPA_PUBLIC_API_BASE_URL,
-  );
+  ).href;
 
   try {
-    const fhirResp = await fetchWithRetry(href, authorization);
-    const fhirBody: Bundle = await fhirResp.json();
-    res.send(fhirBody);
+    const fhirResponse = await handleFetchRequest(endpoint, authHeader);
+    const fhirData: Bundle = await fhirResponse.json();
+    res.send(fhirData);
   } catch (err) {
-    console.log(`Error retrieving FHIR: ${err}`);
-    return res.status(500).send(`Error retrieving FHIR: ${err}`);
+    console.log(`Error retrieving FHIR data: ${err}`);
+    return res.status(500).send(`Error retrieving FHIR data: ${err}`);
   }
 });
 
